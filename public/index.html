@@ -1,0 +1,96 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Campus ERP</title>
+<style>
+:root{--bg:#fff;--fg:#1c2430;--mut:#6b7686;--line:#e5e8ee;--acc:#1f4fd8;--ok:#1a7f4b;--bad:#b42318;--warn:#a15c00;--soft:#f5f7fa}
+@media(prefers-color-scheme:dark){:root{--bg:#10141a;--fg:#e8ecf2;--mut:#98a2b3;--line:#262d38;--acc:#6e93ff;--ok:#4cc38a;--bad:#ff7b72;--warn:#e3a008;--soft:#171c24}}
+*{box-sizing:border-box}html,body{margin:0}body{font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg);padding-bottom:72px}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line)}
+header b{font-weight:600}.badge{font-size:13px;color:var(--mut)}.badge.p{color:var(--warn)}
+main{max-width:860px;margin:0 auto;padding:20px}h2{font-size:20px;margin:0 0 16px;font-weight:600}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--bg);border-top:1px solid var(--line)}
+nav button{flex:1;padding:14px 4px;border:0;background:none;color:var(--mut);font:inherit;font-size:14px}nav button.on{color:var(--acc);font-weight:600}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);font-size:15px}th{color:var(--mut);font-weight:500;font-size:13px}
+.wrap{overflow-x:auto}.btn{padding:12px 18px;border-radius:10px;border:0;background:var(--acc);color:#fff;font:inherit;font-weight:600}
+.btn.s{background:var(--soft);color:var(--fg);border:1px solid var(--line)}.btn.sm{padding:6px 12px;font-size:14px}
+input,select{font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);max-width:100%}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.card{max-width:340px;margin:12vh auto;padding:0 20px}.card input{width:100%;margin-bottom:12px}
+.ar{display:flex;justify-content:space-between;align-items:center;padding:12px 4px;border-bottom:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-top:0;color:inherit;font:inherit;text-align:left}
+.pill{padding:4px 12px;border-radius:99px;font-size:14px;font-weight:600}.pill.p{background:#e6f4ec;color:var(--ok)}.pill.a{background:#fdecea;color:var(--bad)}
+.mut{color:var(--mut)}.bad{color:var(--bad)}.ok{color:var(--ok)}.note{padding:10px 14px;border-radius:10px;background:var(--soft);margin-bottom:16px}
+#toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none}#toast.on{opacity:1}
+.mk{width:64px}
+</style></head><body>
+<header><b>Campus ERP</b><span><span id="net" class="badge"></span> <button class="btn s sm" id="out" hidden>Sign out</button></span></header>
+<main id="m"></main><nav id="nav" hidden></nav><div id="toast" role="status"></div>
+<script>
+const $=s=>document.querySelector(s), m=$('#m');
+const h=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,v]of Object.entries(a))x.startsWith('on')?e.addEventListener(x.slice(2),v):x==='class'?e.className=v:v===false||v==null||(e[x]=v);e.append(...k.flat().filter(c=>c!=null));return e};
+let S=JSON.parse(sessionStorage.getItem('s')||'null');
+const toast=t=>{const e=$('#toast');e.textContent=t;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),2600)};
+async function api(p,o={}){const r=await fetch('/api/'+p,{method:o.m||'GET',headers:{'content-type':'application/json',authorization:'Bearer '+(S?.token||'')},body:o.b&&JSON.stringify(o.b)});
+  if(r.status===401&&S){logout();throw Error('Session expired')}const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||'Request failed');return j}
+// ---- offline queue (IndexedDB) ----
+const idb=()=>new Promise((ok,no)=>{const r=indexedDB.open('erp',1);r.onupgradeneeded=()=>r.result.createObjectStore('q',{keyPath:'client_id'});r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+const tx=async(mode,f)=>{const d=await idb();return new Promise((ok,no)=>{const t=d.transaction('q',mode),s=t.objectStore('q'),q=f(s);t.oncomplete=()=>ok(q?.result);t.onerror=()=>no(t.error)})};
+const qAll=()=>tx('readonly',s=>s.getAll()), qAdd=r=>tx('readwrite',s=>s.put(r)), qDel=id=>tx('readwrite',s=>s.delete(id));
+async function badge(){const n=(await qAll()).length;const e=$('#net');e.className='badge'+(n?' p':'');e.textContent=(navigator.onLine?'Online':'Offline')+(n?` · ${n} pending`:'')}
+let busy=false;
+async function sync(){if(busy)return null;busy=true;const q=await qAll();if(!q.length||!S||S.role!=='faculty'){busy=false;return null}
+  try{const r=await api('attendance/sync',{m:'POST',b:{records:q}});for(const id of[...r.accepted,...r.duplicates,...r.corrected,...r.rejected.map(x=>x.client_id)])await qDel(id);await badge();return r}catch{await badge();return null}finally{busy=false}}
+addEventListener('online',()=>{sync().then(r=>r&&toast(`Synced ${r.accepted.length} records`));badge()});addEventListener('offline',badge);
+// ---- views ----
+const TABS={faculty:[['Attendance',att],['Marks',marks],['Students',students],['Leave',leave],['At-risk',risk]],admin:[['Dashboard',dash],['Students',students],['Marks',marks],['Fees',fees],['At-risk',risk],['Admissions',adm],['Leave',leave],['Ask',ask],['Audit',audit]]};
+function logout(){sessionStorage.clear();S=null;boot()}
+$('#out').onclick=logout;
+async function show(fn){m.replaceChildren(h('p',{class:'mut'},'Loading…'));try{m.replaceChildren(await fn())}catch(e){m.replaceChildren(h('div',{class:'note bad'},e.message),h('button',{class:'btn s',onclick:()=>show(fn)},'Retry'))}}
+const empty=t=>h('p',{class:'mut'},t);
+const table=(cols,rows)=>rows.length?h('div',{class:'wrap'},h('table',{},h('tr',{},cols.map(c=>h('th',{},c))),rows.map(r=>h('tr',{},r.map(c=>h('td',{},c)))))):empty('Nothing to show yet.');
+const pct=a=>a==null?h('span',{class:'mut'},'—'):h('span',{class:a<75?'bad':'ok'},a+'%');
+async function students(){const s=await api('students');localStorage.setItem('roster',JSON.stringify(s));return h('div',{},h('h2',{},'Students'),table(['Roll no','Name','Programme','Year','Attendance'],s.map(x=>[x.roll,x.name,x.programme,x.year,pct(x.attendance)])))}
+async function att(){let roster;try{roster=await api('students');localStorage.setItem('roster',JSON.stringify(roster))}catch{roster=JSON.parse(localStorage.getItem('roster')||'[]')}
+  const subs=await api('subjects').catch(()=>[{id:1,code:'CS301',name:'Data Structures'}]);
+  if(!roster.length)return empty('Open this screen once online to load your class list.');
+  const P={};roster.forEach(s=>P[s.roll]=true);const date=h('input',{type:'date',value:new Date().toISOString().slice(0,10)});
+  const per=h('select',{},[1,2,3,4,5,6,7,8].map(n=>h('option',{value:n},'Period '+n)));const sub=h('select',{},subs.map(s=>h('option',{value:s.id},s.code+' '+s.name)));
+  const count=h('b',{});const list=h('div',{});
+  const draw=()=>{list.replaceChildren(...roster.map(s=>h('button',{class:'ar',onclick:()=>{P[s.roll]=!P[s.roll];draw()}},h('span',{},s.name,h('br'),h('small',{class:'mut'},s.roll)),h('span',{class:'pill '+(P[s.roll]?'p':'a')},P[s.roll]?'Present':'Absent'))));count.textContent=Object.values(P).filter(Boolean).length+' / '+roster.length+' present'};draw();
+  const save=h('button',{class:'btn',onclick:async()=>{save.disabled=true;
+    for(const s of roster)await qAdd({client_id:crypto.randomUUID(),roll:s.roll,subject_id:+sub.value,date:date.value,period:+per.value,present:P[s.roll]});
+    const r=await sync();await badge();toast(r?`Saved and synced${r.corrected.length?` · ${r.corrected.length} corrected`:''}${r.rejected.length?` (${r.rejected.length} rejected)`:''}`:'Saved offline. Will sync when online');save.disabled=false}},'Save attendance');
+  return h('div',{},h('h2',{},'Mark attendance'),h('div',{class:'row'},sub,date,per),list,h('div',{class:'row',style:'margin-top:16px'},save,count))}
+async function marks(){const d=await api('marks/1');const by={};d.rows.forEach(r=>(by[r.roll]??={name:r.name,c:{}}).c[r.component]=r);
+  const fac=S.role==='faculty',cs=[['mid1','Mid 1 /20'],['mid2','Mid 2 /10'],['assignment','Assignment /10']];
+  const wrap=h('div',{},h('h2',{},'Internal marks'),d.locked?h('div',{class:'note'},'Locked after moderation. Edits are blocked and audited.'):null);
+  const dl=async()=>{try{const r=await fetch('/api/marks/1/export.csv',{headers:{authorization:'Bearer '+S.token}});if(!r.ok)throw Error((await r.json()).error);const a=h('a',{href:URL.createObjectURL(await r.blob()),download:'internal-marks.csv'});a.click()}catch(e){toast(e.message)}};
+  if(S.role==='admin')wrap.append(h('div',{class:'row'},h('button',{class:'btn s',onclick:dl},'Export CSV'),d.locked?h('button',{class:'btn s',onclick:async()=>{const reason=prompt('Reason for unlocking (logged):');if(!reason)return;try{await api('marks/unlock',{m:'POST',b:{subject_id:1,reason}});show(marks)}catch(e){toast(e.message)}}},'Unlock'):h('button',{class:'btn',onclick:async()=>{await api('marks/lock',{m:'POST',b:{subject_id:1}});show(marks)}},'Lock after moderation')));
+  wrap.append(table(['Student',...cs.map(c=>c[1]),'Total /40'],Object.entries(by).map(([roll,v])=>{const tot=h('b',{},Object.values(v.c).reduce((a,x)=>a+x.score,0));
+    return[v.name,...cs.map(([k])=>fac&&!d.locked?h('input',{class:'mk',type:'number',min:0,max:v.c[k].max,value:v.c[k].score,onchange:async e=>{try{await api('marks',{m:'PUT',b:{roll,subject_id:1,component:k,score:+e.target.value}});v.c[k].score=+e.target.value;tot.textContent=Object.values(v.c).reduce((a,x)=>a+x.score,0);toast('Saved')}catch(x){toast(x.message);e.target.value=v.c[k].score}}}):String(v.c[k].score)),tot]})));return wrap}
+async function fees(){const f=await api('fees');const exp=async()=>{try{const r=await fetch('/api/fees/export.csv',{headers:{authorization:'Bearer '+S.token}});h('a',{href:URL.createObjectURL(await r.blob()),download:'fee-receipts.csv'}).click()}catch(e){toast(e.message)}};
+  return h('div',{},h('h2',{},'Fee dues'),h('div',{class:'row'},h('button',{class:'btn s sm',onclick:exp},'Export receipts (Tally CSV)')),table(['Roll no','Name','Due ₹',''],f.map(x=>[x.roll,x.name,x.fee_due?'₹'+x.fee_due.toLocaleString('en-IN'):h('span',{class:'ok'},'Clear'),x.fee_due?h('button',{class:'btn s sm',onclick:async()=>{const a=+prompt('Test-mode payment amount (₹):',x.fee_due);if(!a)return;try{const x2=await api('fees/pay-mock',{m:'POST',b:{roll:x.roll,amount:a}});toast('Test payment recorded · '+x2.receipt);show(fees)}catch(e){toast(e.message)}}},'Test payment'):'']))) }
+async function risk(){const r=await api('at-risk');const w=h('div',{},h('h2',{},'At-risk students'),h('p',{class:'mut'},'Fixed rule: attendance under 75%, internal marks under 50%, or a sharp drop. A flag only creates a mentor task.'));
+  if(S.role==='admin')w.append(h('div',{class:'row'},h('button',{class:'btn',onclick:async()=>{const x=await api('at-risk/run',{m:'POST'});toast(x.created+' new mentor task(s)')}},'Create mentor tasks')));
+  w.append(r.length?table(['Student','Attendance','Why flagged'],r.map(x=>[x.name,pct(x.attendance),x.reasons.join('; ')])):empty('No students flagged.'));return w}
+async function ask(){const q=h('input',{placeholder:'e.g. second-year students below 75%',style:'flex:1;min-width:200px'}),out=h('div',{});
+  const go=async()=>{out.replaceChildren(h('p',{class:'mut'},'Thinking…'));try{const r=await api('ask',{m:'POST',b:{q:q.value}});
+    out.replaceChildren(h('div',{class:'note'},h('b',{},r.count+(r.count===1?' student':' students')),' matched. Filters used: ',r.filters.map(f=>h('code',{},` ${f.field} ${f.op} ${f.value} `)),h('br'),h('small',{class:'mut'},r.source==='ai'?'Understood by AI. Check the filters above.':'Understood by fixed rules. Read-only.')),table(['Roll no','Name','Programme','Year','Attendance','Due ₹'],r.rows.map(x=>[x.roll,x.name,x.programme,x.year,pct(x.attendance),x.fee_due])))}catch(e){out.replaceChildren(h('div',{class:'note bad'},e.message))}};
+  q.onkeydown=k=>k.key==='Enter'&&go();return h('div',{},h('h2',{},'Ask about students'),h('p',{class:'mut'},'Read-only. Shows the filters it used so you can check the answer.'),h('div',{class:'row'},q,h('button',{class:'btn',onclick:go},'Ask')),out)}
+async function adm(){const ta=h('textarea',{rows:7,style:'width:100%;font:14px monospace;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)'},'name,dob,programme,year,guardian_consent\nMeera Das,2007-08-12,B.Tech CSE,1,no\nRohan Sahu,2012-01-20,B.Tech CSE,1,no\nTanvi Roy,2004-03-02,MBA,1,no');const out=h('div',{});
+  const go=async()=>{out.replaceChildren(h('p',{class:'mut'},'Importing…'));try{const r=await api('admissions/import',{m:'POST',b:{csv:ta.value}});
+    out.replaceChildren(h('div',{class:'note'},`${r.created.length} created · ${r.held.length} held for guardian consent · ${r.duplicates.length} duplicate · ${r.rejected.length} rejected`),
+      table(['Line','Result','Detail'],[...r.created.map(x=>[x.line,'Created',x.name+' → '+x.roll]),...r.held.map(x=>[x.line,'Held',x.name+': '+x.reason]),...r.duplicates.map(x=>[x.line,'Duplicate',x.name]),...r.rejected.map(x=>[x.line,'Rejected',x.reason])]))}catch(e){out.replaceChildren(h('div',{class:'note bad'},e.message))}};
+  return h('div',{},h('h2',{},'Admissions import'),h('p',{class:'mut'},'Paste applicants as CSV (no quoted commas). Under-18 applicants need guardian_consent = yes or they are held, not created.'),ta,h('div',{class:'row',style:'margin-top:12px'},h('button',{class:'btn',onclick:go},'Import')),out)}
+async function dash(){const d=await api('dashboard'),c=(n,v,cl)=>h('div',{style:'border:1px solid var(--line);border-radius:12px;padding:14px'},h('div',{class:'mut',style:'font-size:13px'},n),h('div',{style:'font-size:26px;font-weight:600',class:cl||''},v));
+  return h('div',{},h('h2',{},'Campus dashboard'),h('div',{style:'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px'},c('Students',d.students),c('Average attendance',d.avgAttendance==null?'—':d.avgAttendance+'%'),c('Below 75%',d.below75,d.below75?'bad':'ok'),c('Fees due','₹'+d.totalDue.toLocaleString('en-IN')),c('Students with dues',d.studentsWithDues),c('Open mentor tasks',d.openMentorTasks),c('Pending leave',d.pendingLeave)))}
+async function leave(){const r=await api('leave'),fac=S.role==='faculty';const w=h('div',{},h('h2',{},'Staff leave'));
+  if(fac){const ty=h('select',{},['casual','medical','earned'].map(x=>h('option',{value:x},x))),f=h('input',{type:'date'}),t=h('input',{type:'date'}),why=h('input',{placeholder:'Reason',style:'flex:1;min-width:180px'});
+    w.append(h('p',{class:'mut'},r.left+' leave day(s) left this year'),h('div',{class:'row'},ty,f,t,why,h('button',{class:'btn',onclick:async()=>{try{await api('leave',{m:'POST',b:{type:ty.value,from:f.value,to:t.value,reason:why.value}});toast('Leave requested');show(leave)}catch(e){toast(e.message)}}},'Request')))}
+  const dec=(id,x)=>async()=>{try{await api('leave/'+id+'/decide',{m:'POST',b:{decision:x}});show(leave)}catch(e){toast(e.message)}};
+  w.append(table(fac?['Dates','Days','Type','Status']:['Staff','Dates','Days','Reason','Status',''],r.rows.map(x=>fac?[x.from_date+' to '+x.to_date,x.days,x.type,x.status]:[x.name,x.from_date+' to '+x.to_date,x.days,x.reason,x.status,x.status==='pending'?h('span',{},h('button',{class:'btn sm',onclick:dec(x.id,'approve')},'Approve'),' ',h('button',{class:'btn s sm',onclick:dec(x.id,'reject')},'Reject')):''])));return w}
+async function audit(){const a=await api('audit');return h('div',{},h('h2',{},'Audit log'),table(['When','Action','Detail'],a.map(x=>[new Date(x.at).toLocaleString(),x.action,x.detail])))}
+function boot(){const nav=$('#nav');$('#out').hidden=!S;nav.hidden=!S;badge();
+  if(!S){nav.replaceChildren();const e=h('input',{type:'email',placeholder:'Email',autocomplete:'username'}),p=h('input',{type:'password',placeholder:'Password',autocomplete:'current-password'}),err=h('p',{class:'bad'});
+    const go=async()=>{try{S=await api('login',{m:'POST',b:{email:e.value,password:p.value}});sessionStorage.setItem('s',JSON.stringify(S));boot()}catch(x){err.textContent=x.message}};
+    p.onkeydown=k=>k.key==='Enter'&&go();m.replaceChildren(h('div',{class:'card'},h('h2',{},'Sign in'),e,p,err,h('button',{class:'btn',style:'width:100%',onclick:go},'Sign in')));return}
+  const tabs=TABS[S.role];nav.replaceChildren(...tabs.map(([n,f],i)=>h('button',{onclick:()=>{[...nav.children].forEach(b=>b.classList.remove('on'));nav.children[i].classList.add('on');show(f)}},n)));nav.children[0].click();sync()}
+if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js');boot();
+</script></body></html>
