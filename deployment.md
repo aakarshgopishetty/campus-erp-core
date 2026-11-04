@@ -5,7 +5,7 @@
 2. `git clone <your repo URL> && cd campus-erp-core`
 3. `npm install`
 4. `cp .env.example .env`, then set `SESSION_SECRET` to a long random string (for example `openssl rand -hex 32`). Export the variables, or run `export $(grep -v '^#' .env | xargs)`.
-5. `npm test` (20 tests should pass).
+5. `npm test` (23 tests should pass).
 6. `npm start`, then open http://localhost:3000. The database file is created and seeded on first start.
 
 ## How it is deployed
@@ -36,4 +36,4 @@ Demo data only, no real personal data. Type the email and password below on the 
 ## Suggested review path
 1. Faculty: **Attendance**. Mark a class, then turn the network off in browser dev tools and save. The header shows "N pending". Go back online and it syncs.
 2. Faculty: **Marks**. Edit a score. Then sign in as admin, press **Lock after moderation**, and sign back in as faculty to see that edits are blocked.
-3. Faculty: **Leave** (request 2 days). Admin: **Dashboard**, then **Leave** (approve). **Admissions** (press Import on the sample CSV; the under-18 row is held). **Fees** (test payment, then Export receipts). **Ask** (try "second-year students below 75%" or "students with fee dues"). **Audit** shows every change. **Fees** has a test-mode payment. **At-risk** has *Create mentor tasks*.
+3. Admin: **Subjects** (add CS302, assign faculty@demo.test); faculty then sees it in **Marks**. Faculty: **Leave** (request 2 days). Admin: **Dashboard**, then **Leave** (approve). **Admissions** (press Import on the sample CSV; the under-18 row is held). **Fees** (test payment, then Export receipts). **Ask** (try "second-year students below 75%" or "students with fee dues"). **Audit** shows every change. **Fees** has a test-mode payment. **At-risk** has *Create mentor tasks*.
