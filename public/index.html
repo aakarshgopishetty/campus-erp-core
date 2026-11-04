@@ -1,26 +1,31 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Campus ERP</title>
 <style>
-:root{--bg:#fff;--fg:#1c2430;--mut:#6b7686;--line:#e5e8ee;--acc:#1f4fd8;--ok:#1a7f4b;--bad:#b42318;--warn:#a15c00;--soft:#f5f7fa}
+:root{--bg:#fff;--fg:#1c2430;--mut:#6b7686;--line:#e5e8ee;--acc:#1f4fd8;--ok:#1a7f4b;--bad:#b42318;--warn:#a15c00;--soft:#f5f7fa;--shadow:0 1px 2px rgba(16,24,40,.06),0 8px 24px rgba(16,24,40,.06)}
 @media(prefers-color-scheme:dark){:root{--bg:#10141a;--fg:#e8ecf2;--mut:#98a2b3;--line:#262d38;--acc:#6e93ff;--ok:#4cc38a;--bad:#ff7b72;--warn:#e3a008;--soft:#171c24}}
-*{box-sizing:border-box}html,body{margin:0}body{font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg);padding-bottom:72px}
-header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line)}
+*{box-sizing:border-box}html,body{margin:0}body{font:16px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--fg);padding-bottom:72px;-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+.chip{font-size:12px;font-weight:600;padding:3px 10px;border-radius:99px;background:var(--soft);border:1px solid var(--line);color:var(--mut)}
+header .right{display:flex;gap:8px;align-items:center}header b,.chip,.badge,#out{white-space:nowrap}header{padding:10px 14px}.badge{font-size:12px}@media(max-width:430px){header b{font-size:15px}.chip{display:none}}
 header b{font-weight:600}.badge{font-size:13px;color:var(--mut)}.badge.p{color:var(--warn)}
 main{max-width:860px;margin:0 auto;padding:20px}h2{font-size:20px;margin:0 0 16px;font-weight:600}
-nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--bg);border-top:1px solid var(--line)}
-nav button{flex:1;padding:14px 4px;border:0;background:none;color:var(--mut);font:inherit;font-size:14px}nav button.on{color:var(--acc);font-weight:600}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);font-size:15px}th{color:var(--mut);font-weight:500;font-size:13px}
-.wrap{overflow-x:auto}.btn{padding:12px 18px;border-radius:10px;border:0;background:var(--acc);color:#fff;font:inherit;font-weight:600}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--bg);border-top:1px solid var(--line);overflow-x:auto;scrollbar-width:none;z-index:5}
+nav::-webkit-scrollbar{display:none}
+nav button{flex:1 0 auto;min-width:76px;padding:14px 12px;border:0;border-top:3px solid transparent;background:none;color:var(--mut);font:inherit;font-size:14px;white-space:nowrap;cursor:pointer}nav button.on{color:var(--acc);font-weight:600;border-top-color:var(--acc)}
+table{width:100%;border-collapse:collapse}tr:hover td{background:var(--soft)}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);font-size:15px}th{color:var(--mut);font-weight:500;font-size:13px}
+.wrap{overflow-x:auto}.btn{padding:12px 18px;border-radius:10px;border:0;background:var(--acc);color:#fff;font:inherit;font-weight:600;cursor:pointer;transition:filter .15s,transform .05s}.btn:hover{filter:brightness(1.08)}.btn:active{transform:scale(.98)}.btn:disabled{opacity:.6}
 .btn.s{background:var(--soft);color:var(--fg);border:1px solid var(--line)}.btn.sm{padding:6px 12px;font-size:14px}
-input,select{font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);max-width:100%}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.card{max-width:340px;margin:12vh auto;padding:0 20px}.card input{width:100%;margin-bottom:12px}
-.ar{display:flex;justify-content:space-between;align-items:center;padding:12px 4px;border-bottom:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-top:0;color:inherit;font:inherit;text-align:left}
+input:focus,select:focus,textarea:focus{border-color:var(--acc)}input,select{font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);max-width:100%}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.card{max-width:380px;margin:8vh auto;padding:28px 24px;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}.card h2{font-size:24px;margin-bottom:4px}.card .sub{margin:0 0 20px;color:var(--mut);font-size:15px}.card .or{margin:22px 0 10px;color:var(--mut);font-size:13px;text-align:center}.card input{width:100%;margin-bottom:12px}
+.ar{display:flex;justify-content:space-between;align-items:center;padding:14px 4px;cursor:pointer;border-bottom:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-top:0;color:inherit;font:inherit;text-align:left}
 .pill{padding:4px 12px;border-radius:99px;font-size:14px;font-weight:600}.pill.p{background:#e6f4ec;color:var(--ok)}.pill.a{background:#fdecea;color:var(--bad)}
 .mut{color:var(--mut)}.bad{color:var(--bad)}.ok{color:var(--ok)}.note{padding:10px 14px;border-radius:10px;background:var(--soft);margin-bottom:16px}
 #toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none}#toast.on{opacity:1}
-.mk{width:64px}
+.mk{width:64px}.spin{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite;margin:24px auto}@keyframes sp{to{transform:rotate(360deg)}}
 </style></head><body>
-<header><b>Campus ERP</b><span><span id="net" class="badge"></span> <button class="btn s sm" id="out" hidden>Sign out</button></span></header>
+<header><b>Campus ERP</b><span class="right"><span id="role" class="chip" hidden></span><span id="net" class="badge"></span><button class="btn s sm" id="out" hidden>Sign out</button></span></header>
 <main id="m"></main><nav id="nav" hidden></nav><div id="toast" role="status"></div>
 <script>
 const $=s=>document.querySelector(s), m=$('#m');
@@ -42,7 +47,7 @@ addEventListener('online',()=>{sync().then(r=>r&&toast(`Synced ${r.accepted.leng
 const TABS={faculty:[['Attendance',att],['Marks',marks],['Students',students],['Leave',leave],['At-risk',risk]],admin:[['Dashboard',dash],['Students',students],['Marks',marks],['Fees',fees],['At-risk',risk],['Admissions',adm],['Leave',leave],['Ask',ask],['Audit',audit]]};
 function logout(){sessionStorage.clear();S=null;boot()}
 $('#out').onclick=logout;
-async function show(fn){m.replaceChildren(h('p',{class:'mut'},'Loading…'));try{m.replaceChildren(await fn())}catch(e){m.replaceChildren(h('div',{class:'note bad'},e.message),h('button',{class:'btn s',onclick:()=>show(fn)},'Retry'))}}
+async function show(fn){m.replaceChildren(h('div',{class:'spin',role:'status','aria-label':'Loading'}));try{m.replaceChildren(await fn())}catch(e){m.replaceChildren(h('div',{class:'note bad'},e.message),h('button',{class:'btn s',onclick:()=>show(fn)},'Retry'))}}
 const empty=t=>h('p',{class:'mut'},t);
 const table=(cols,rows)=>rows.length?h('div',{class:'wrap'},h('table',{},h('tr',{},cols.map(c=>h('th',{},c))),rows.map(r=>h('tr',{},r.map(c=>h('td',{},c)))))):empty('Nothing to show yet.');
 const pct=a=>a==null?h('span',{class:'mut'},'—'):h('span',{class:a<75?'bad':'ok'},a+'%');
@@ -87,10 +92,10 @@ async function leave(){const r=await api('leave'),fac=S.role==='faculty';const w
   const dec=(id,x)=>async()=>{try{await api('leave/'+id+'/decide',{m:'POST',b:{decision:x}});show(leave)}catch(e){toast(e.message)}};
   w.append(table(fac?['Dates','Days','Type','Status']:['Staff','Dates','Days','Reason','Status',''],r.rows.map(x=>fac?[x.from_date+' to '+x.to_date,x.days,x.type,x.status]:[x.name,x.from_date+' to '+x.to_date,x.days,x.reason,x.status,x.status==='pending'?h('span',{},h('button',{class:'btn sm',onclick:dec(x.id,'approve')},'Approve'),' ',h('button',{class:'btn s sm',onclick:dec(x.id,'reject')},'Reject')):''])));return w}
 async function audit(){const a=await api('audit');return h('div',{},h('h2',{},'Audit log'),table(['When','Action','Detail'],a.map(x=>[new Date(x.at).toLocaleString(),x.action,x.detail])))}
-function boot(){const nav=$('#nav');$('#out').hidden=!S;nav.hidden=!S;badge();
-  if(!S){nav.replaceChildren();const e=h('input',{type:'email',placeholder:'Email',autocomplete:'username',autocapitalize:'off'}),p=h('input',{type:'password',placeholder:'Password',autocomplete:'current-password'}),err=h('p',{class:'bad'});
+function boot(){const nav=$('#nav');$('#out').hidden=!S;nav.hidden=!S;{const r=$('#role');r.hidden=!S;if(S)r.textContent=S.role==='admin'?'Office admin':'Faculty'}badge();
+  if(!S){nav.replaceChildren();const e=h('input',{type:'email',placeholder:'Email',autocomplete:'username',autocapitalize:'off',autocorrect:'off',spellcheck:false}),p=h('input',{type:'password',placeholder:'Password',autocomplete:'current-password'}),err=h('p',{class:'bad'});
     const go=async()=>{try{S=await api('login',{m:'POST',b:{email:e.value,password:p.value}});sessionStorage.setItem('s',JSON.stringify(S));boot()}catch(x){err.textContent=x.message}};
-    p.onkeydown=k=>{if(k.key==='Enter')go()};m.replaceChildren(h('div',{class:'card'},h('h2',{},'Sign in'),e,p,err,h('button',{class:'btn',style:'width:100%',onclick:go},'Sign in'),h('p',{class:'mut',style:'margin-top:20px'},'Demo logins (password demo-pass-1)'),h('button',{class:'btn s',style:'width:100%;margin-bottom:8px',onclick:()=>{e.value='faculty@demo.test';p.value='demo-pass-1';go()}},'Demo: faculty'),h('button',{class:'btn s',style:'width:100%',onclick:()=>{e.value='admin@demo.test';p.value='demo-pass-1';go()}},'Demo: admin')));return}
+    p.onkeydown=k=>{if(k.key==='Enter')go()};m.replaceChildren(h('div',{class:'card'},h('h2',{},'Campus ERP'),h('p',{class:'sub'},'Attendance, marks and fees for one campus'),e,p,err,h('button',{class:'btn',style:'width:100%',onclick:go},'Sign in')));return}
   const tabs=TABS[S.role];nav.replaceChildren(...tabs.map(([n,f],i)=>h('button',{onclick:()=>{[...nav.children].forEach(b=>b.classList.remove('on'));nav.children[i].classList.add('on');show(f)}},n)));nav.children[0].click();sync()}
 if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js');boot();
 </script></body></html>
