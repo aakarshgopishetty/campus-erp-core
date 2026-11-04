@@ -27,6 +27,7 @@ export function createApp(db, secret, opts = {}) {
   const audit = (uid, action, detail) =>
     db.prepare('INSERT INTO audit(at,user_id,action,detail) VALUES(?,?,?,?)').run(new Date().toISOString(), uid, action, JSON.stringify(detail));
 
+  const canTeach = (u, sid) => u.role === 'admin' || !!db.prepare('SELECT 1 FROM teaching WHERE user_id=? AND subject_id=?').get(u.id, sid);
   const attPct = (roll) => { const r = db.prepare('SELECT SUM(present) p, COUNT(*) t FROM attendance WHERE roll=?').get(roll); return r.t ? pct(r.p || 0, r.t) : null; };
   const marksOf = (roll) => Object.fromEntries(db.prepare('SELECT component,score,max FROM marks WHERE roll=?').all(roll).map((m) => [m.component, m]));
 
@@ -41,8 +42,24 @@ export function createApp(db, secret, opts = {}) {
     res.json({ token: sign({ id: u.id, role: u.role, campus: u.campus_id, exp: Date.now() + 8 * 3600e3 }), name: u.name, role: u.role });
   });
 
+  // Subjects (masters). Faculty only see and use subjects assigned to them.
   app.get('/api/subjects', auth(), (req, res) =>
-    res.json(db.prepare('SELECT id,code,name FROM subjects WHERE campus_id=?').all(req.user.campus)));
+    res.json(db.prepare(`SELECT s.id,s.code,s.name,s.programme,s.year,
+      (SELECT group_concat(u.name, ', ') FROM teaching t JOIN users u ON u.id=t.user_id WHERE t.subject_id=s.id) faculty
+      FROM subjects s WHERE s.campus_id=? AND (?=1 OR s.id IN (SELECT subject_id FROM teaching WHERE user_id=?)) ORDER BY s.code`).all(req.user.campus, req.user.role === 'admin' ? 1 : 0, req.user.id)));
+  app.post('/api/subjects', auth('admin'), (req, res) => {
+    const { code, name, programme, year, faculty_email } = req.body || {};
+    if (typeof code !== 'string' || !/^[A-Za-z0-9-]{2,12}$/.test(code) || typeof name !== 'string' || name.trim().length < 3 || name.length > 60 || !PROGRAMMES[programme] || !Number.isInteger(year) || year < 1 || year > 4)
+      return res.status(400).json({ error: 'Check code (2-12 letters/digits), name, programme and year' });
+    if (db.prepare('SELECT 1 FROM subjects WHERE campus_id=? AND code=?').get(req.user.campus, code.toUpperCase())) return res.status(409).json({ error: 'That subject code already exists' });
+    let fac = null;
+    if (faculty_email) { fac = db.prepare("SELECT id FROM users WHERE email=? AND role='faculty' AND campus_id=?").get(String(faculty_email).trim().toLowerCase(), req.user.campus);
+      if (!fac) return res.status(400).json({ error: 'No faculty member with that email on this campus' }); }
+    const id = Number(db.prepare('INSERT INTO subjects(campus_id,code,name,programme,year) VALUES(?,?,?,?,?)').run(req.user.campus, code.toUpperCase(), name.trim(), programme, year).lastInsertRowid);
+    if (fac) db.prepare('INSERT INTO teaching VALUES(?,?)').run(fac.id, id);
+    audit(req.user.id, 'subject.create', { id, code: code.toUpperCase(), faculty: fac ? faculty_email : null });
+    res.json({ id });
+  });
 
   app.get('/api/students', auth(), (req, res) => {
     const rows = db.prepare('SELECT roll,name,programme,year FROM students WHERE campus_id=?').all(req.user.campus);
@@ -59,8 +76,8 @@ export function createApp(db, secret, opts = {}) {
     for (const r of recs) {
       const err = validateRecord(r);
       const ok = !err && db.prepare('SELECT 1 FROM students WHERE roll=? AND campus_id=?').get(r.roll, req.user.campus)
-        && db.prepare('SELECT 1 FROM subjects WHERE id=? AND campus_id=?').get(r.subject_id, req.user.campus);
-      if (err || !ok) { out.rejected.push({ client_id: r?.client_id, reason: err || 'unknown student or subject' }); continue; }
+        && db.prepare('SELECT 1 FROM subjects WHERE id=? AND campus_id=?').get(r.subject_id, req.user.campus) && canTeach(req.user, r.subject_id);
+      if (err || !ok) { out.rejected.push({ client_id: r?.client_id, reason: err || 'unknown student, or subject not assigned to you' }); continue; }
       if (db.prepare('SELECT 1 FROM attendance WHERE client_id=?').get(r.client_id)) { out.duplicates.push(r.client_id); continue; }
       const slot = db.prepare('SELECT client_id,present FROM attendance WHERE roll=? AND subject_id=? AND date=? AND period=?').get(r.roll, r.subject_id, r.date, r.period);
       if (slot) { // same period marked again: a different value is a correction (last write wins, audited)
@@ -80,7 +97,11 @@ export function createApp(db, secret, opts = {}) {
 
   app.get('/api/marks/:subject', auth(), (req, res) => {
     const sid = Number(req.params.subject);
-    const rows = db.prepare('SELECT m.roll,s.name,m.component,m.score,m.max FROM marks m JOIN students s ON s.roll=m.roll WHERE m.subject_id=? AND s.campus_id=?').all(sid, req.user.campus);
+    if (!db.prepare('SELECT 1 FROM subjects WHERE id=? AND campus_id=?').get(sid, req.user.campus) || !canTeach(req.user, sid)) return res.status(403).json({ error: 'Not your subject' });
+    const have = new Map(db.prepare('SELECT roll,component,score FROM marks WHERE subject_id=?').all(sid).map((m) => [m.roll + '|' + m.component, m.score]));
+    const rows = [];
+    for (const s of db.prepare('SELECT roll,name FROM students WHERE campus_id=? ORDER BY roll').all(req.user.campus))
+      for (const [component, max] of Object.entries(COMPONENTS)) rows.push({ roll: s.roll, name: s.name, component, score: have.get(s.roll + '|' + component) ?? null, max });
     res.json({ locked: !!db.prepare('SELECT 1 FROM mark_locks WHERE subject_id=?').get(sid), rows });
   });
 
@@ -103,6 +124,7 @@ export function createApp(db, secret, opts = {}) {
     const max = COMPONENTS[component];
     if (!max || !Number.isInteger(subject_id) || typeof roll !== 'string' || typeof score !== 'number' || score < 0 || score > max)
       return res.status(400).json({ error: 'Invalid marks entry' });
+    if (!canTeach(req.user, subject_id)) return res.status(403).json({ error: 'Not your subject' });
     if (db.prepare('SELECT 1 FROM mark_locks WHERE subject_id=?').get(subject_id))
       return res.status(409).json({ error: 'Marks are locked after moderation' });
     const old = db.prepare('SELECT score FROM marks WHERE roll=? AND subject_id=? AND component=?').get(roll, subject_id, component);
