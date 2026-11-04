@@ -31,7 +31,8 @@ export function createApp(db, secret, opts = {}) {
   const marksOf = (roll) => Object.fromEntries(db.prepare('SELECT component,score,max FROM marks WHERE roll=?').all(roll).map((m) => [m.component, m]));
 
   app.post('/api/login', (req, res) => {
-    const { email, password } = req.body || {};
+    let { email, password } = req.body || {};
+    if (typeof email === 'string') email = email.trim().toLowerCase(); // phone keyboards capitalise and add spaces
     const key = req.ip + '|' + String(email).toLowerCase().slice(0, 100), f = fails.get(key);
     if (f && f.n >= 5 && Date.now() - f.t < 900e3) return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes' });
     const u = typeof email === 'string' && typeof password === 'string' && db.prepare('SELECT * FROM users WHERE email=?').get(email);
