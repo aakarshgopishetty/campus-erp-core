@@ -155,3 +155,7 @@ test('attendance: marking a period again corrects it (audited); same value is a 
   const log = await (await call('GET', '/api/audit', 'admin')).json();
   assert.ok(log.some((l) => l.action === 'attendance.correct'));
 });
+test('login ignores capitals and spaces in the email (phone keyboards)', async () => {
+  const r = await fetch(base + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: '  Faculty@Demo.test ', password: 'pw-test-123' }) });
+  assert.equal(r.status, 200);
+});
