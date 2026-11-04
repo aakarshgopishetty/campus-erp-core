@@ -159,3 +159,28 @@ test('login ignores capitals and spaces in the email (phone keyboards)', async (
   const r = await fetch(base + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: '  Faculty@Demo.test ', password: 'pw-test-123' }) });
   assert.equal(r.status, 200);
 });
+test('subjects: admin creates and assigns, duplicates and bad input refused, faculty cannot create', async () => {
+  const mk = (b) => call('POST', '/api/subjects', 'admin', { code: 'CS302', name: 'Algorithms', programme: 'B.Tech CSE', year: 2, faculty_email: 'faculty@demo.test', ...b });
+  const ok = await mk({}); assert.equal(ok.status, 200);
+  assert.equal((await mk({})).status, 409);
+  assert.equal((await mk({ code: 'X9', programme: 'Law' })).status, 400);
+  assert.equal((await mk({ code: 'X8', faculty_email: 'nobody@demo.test' })).status, 400);
+  assert.equal((await call('POST', '/api/subjects', 'faculty', { code: 'ZZ1' })).status, 403);
+  const mine = await (await call('GET', '/api/subjects', 'faculty')).json();
+  assert.ok(mine.some((s) => s.code === 'CS302'));
+});
+test('faculty cannot mark attendance or marks for a subject not assigned to them', async () => {
+  const id = (await (await call('POST', '/api/subjects', 'admin', { code: 'ME201', name: 'Thermodynamics', programme: 'B.Tech Mechanical', year: 2 })).json()).id;
+  const sync = await (await call('POST', '/api/attendance/sync', 'faculty', { records: [{ client_id: 'nsub-aaaa-0001', roll: 'ENG-24-ME-0177', subject_id: id, date: '2026-11-06', period: 1, present: true }] })).json();
+  assert.equal(sync.rejected.length, 1);
+  assert.equal((await call('PUT', '/api/marks', 'faculty', { roll: 'ENG-24-ME-0177', subject_id: id, component: 'mid1', score: 10 })).status, 403);
+  assert.equal((await call('GET', '/api/marks/' + id, 'faculty')).status, 403);
+  assert.equal((await call('GET', '/api/marks/' + id, 'admin')).status, 200);
+});
+test('marks grid for a new subject lists every student and component with empty scores', async () => {
+  const subs = await (await call('GET', '/api/subjects', 'faculty')).json();
+  const s = subs.find((x) => x.code === 'CS302');
+  const g = await (await call('GET', '/api/marks/' + s.id, 'faculty')).json();
+  assert.ok(g.rows.length >= 9 && g.rows.every((r) => r.score === null) && g.locked === false);
+  assert.equal((await call('PUT', '/api/marks', 'faculty', { roll: 'MBA-25-0093', subject_id: s.id, component: 'mid1', score: 12 })).status, 200);
+});
