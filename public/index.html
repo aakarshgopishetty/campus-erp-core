@@ -23,6 +23,16 @@ input:focus,select:focus,textarea:focus{border-color:var(--acc)}input,select{fon
 .pill{padding:4px 12px;border-radius:99px;font-size:14px;font-weight:600}.pill.p{background:#e6f4ec;color:var(--ok)}.pill.a{background:#fdecea;color:var(--bad)}
 .mut{color:var(--mut)}.bad{color:var(--bad)}.ok{color:var(--ok)}.note{padding:10px 14px;border-radius:10px;background:var(--soft);margin-bottom:16px}
 #toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none}#toast.on{opacity:1}
+[hidden]{display:none!important}
+.st{padding:2px 10px;border-radius:99px;font-size:13px;font-weight:600;text-transform:capitalize;background:color-mix(in srgb,currentColor 14%,transparent)}.st.pending{color:var(--warn)}.st.approved{color:var(--ok)}.st.rejected{color:var(--bad)}
+.empty{padding:32px 16px;text-align:center;color:var(--mut);border:1px dashed var(--line);border-radius:12px}
+.bar{position:sticky;bottom:50px;display:flex;gap:12px;align-items:center;padding:12px 0;background:var(--bg);border-top:1px solid var(--line);margin-top:8px}
+h2 .st{font-size:13px;vertical-align:middle;margin-left:8px}
+@media(min-width:900px){body{padding-bottom:0}
+nav{top:57px;bottom:0;right:auto;width:210px;flex-direction:column;border-top:0;border-right:1px solid var(--line);overflow-y:auto;padding:14px 10px;gap:2px}
+nav button{flex:0 0 auto;text-align:left;border-top:0;border-left:3px solid transparent;border-radius:8px;padding:10px 14px;min-width:0}
+nav button.on{border-left-color:var(--acc);background:var(--soft)}nav button:hover{background:var(--soft)}
+main{margin-left:210px;max-width:none;padding:28px 40px}main>*{max-width:920px}.bar{bottom:0}#toast{bottom:24px}}
 .mk{width:64px}.spin{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite;margin:24px auto}@keyframes sp{to{transform:rotate(360deg)}}
 </style></head><body>
 <header><b>Campus ERP</b><span class="right"><span id="role" class="chip" hidden></span><span id="net" class="badge"></span><button class="btn s sm" id="out" hidden>Sign out</button></span></header>
@@ -48,7 +58,7 @@ const TABS={faculty:[['Attendance',att],['Marks',marks],['Students',students],['
 function logout(){sessionStorage.clear();S=null;boot()}
 $('#out').onclick=logout;
 async function show(fn){m.replaceChildren(h('div',{class:'spin',role:'status','aria-label':'Loading'}));try{m.replaceChildren(await fn())}catch(e){m.replaceChildren(h('div',{class:'note bad'},e.message),h('button',{class:'btn s',onclick:()=>show(fn)},'Retry'))}}
-const empty=t=>h('p',{class:'mut'},t);
+const empty=t=>h('p',{class:'empty'},t);
 const table=(cols,rows)=>rows.length?h('div',{class:'wrap'},h('table',{},h('tr',{},cols.map(c=>h('th',{},c))),rows.map(r=>h('tr',{},r.map(c=>h('td',{},c)))))):empty('Nothing to show yet.');
 const pct=a=>a==null?h('span',{class:'mut'},'—'):h('span',{class:a<75?'bad':'ok'},a+'%');
 async function students(){const s=await api('students');localStorage.setItem('roster',JSON.stringify(s));return h('div',{},h('h2',{},'Students'),table(['Roll no','Name','Programme','Year','Attendance'],s.map(x=>[x.roll,x.name,x.programme,x.year,pct(x.attendance)])))}
@@ -62,10 +72,10 @@ async function att(){let roster;try{roster=await api('students');localStorage.se
   const save=h('button',{class:'btn',onclick:async()=>{save.disabled=true;
     for(const s of roster)await qAdd({client_id:crypto.randomUUID(),roll:s.roll,subject_id:+sub.value,date:date.value,period:+per.value,present:P[s.roll]});
     const r=await sync();await badge();toast(r?`Saved and synced${r.corrected.length?` · ${r.corrected.length} corrected`:''}${r.rejected.length?` (${r.rejected.length} rejected)`:''}`:'Saved offline. Will sync when online');save.disabled=false}},'Save attendance');
-  return h('div',{},h('h2',{},'Mark attendance'),h('div',{class:'row'},sub,date,per),list,h('div',{class:'row',style:'margin-top:16px'},save,count))}
+  return h('div',{},h('h2',{},'Mark attendance'),h('div',{class:'row'},sub,date,per),h('div',{class:'row'},h('button',{class:'btn s sm',onclick:()=>{roster.forEach(s=>P[s.roll]=true);draw()}},'All present'),h('button',{class:'btn s sm',onclick:()=>{roster.forEach(s=>P[s.roll]=false);draw()}},'All absent')),list,h('div',{class:'bar'},save,count))}
 async function marks(){const d=await api('marks/1');const by={};d.rows.forEach(r=>(by[r.roll]??={name:r.name,c:{}}).c[r.component]=r);
   const fac=S.role==='faculty',cs=[['mid1','Mid 1 /20'],['mid2','Mid 2 /10'],['assignment','Assignment /10']];
-  const wrap=h('div',{},h('h2',{},'Internal marks'),d.locked?h('div',{class:'note'},'Locked after moderation. Edits are blocked and audited.'):null);
+  const wrap=h('div',{},h('h2',{},'Internal marks',h('span',{class:'st '+(d.locked?'approved':'pending')},d.locked?'locked':'open')),d.locked?h('div',{class:'note'},'Locked after moderation. Edits are blocked and audited.'):null);
   const dl=async()=>{try{const r=await fetch('/api/marks/1/export.csv',{headers:{authorization:'Bearer '+S.token}});if(!r.ok)throw Error((await r.json()).error);const a=h('a',{href:URL.createObjectURL(await r.blob()),download:'internal-marks.csv'});a.click()}catch(e){toast(e.message)}};
   if(S.role==='admin')wrap.append(h('div',{class:'row'},h('button',{class:'btn s',onclick:dl},'Export CSV'),d.locked?h('button',{class:'btn s',onclick:async()=>{const reason=prompt('Reason for unlocking (logged):');if(!reason)return;try{await api('marks/unlock',{m:'POST',b:{subject_id:1,reason}});show(marks)}catch(e){toast(e.message)}}},'Unlock'):h('button',{class:'btn',onclick:async()=>{await api('marks/lock',{m:'POST',b:{subject_id:1}});show(marks)}},'Lock after moderation')));
   wrap.append(table(['Student',...cs.map(c=>c[1]),'Total /40'],Object.entries(by).map(([roll,v])=>{const tot=h('b',{},Object.values(v.c).reduce((a,x)=>a+x.score,0));
@@ -90,7 +100,7 @@ async function leave(){const r=await api('leave'),fac=S.role==='faculty';const w
   if(fac){const ty=h('select',{},['casual','medical','earned'].map(x=>h('option',{value:x},x))),f=h('input',{type:'date'}),t=h('input',{type:'date'}),why=h('input',{placeholder:'Reason',style:'flex:1;min-width:180px'});
     w.append(h('p',{class:'mut'},r.left+' leave day(s) left this year'),h('div',{class:'row'},ty,f,t,why,h('button',{class:'btn',onclick:async()=>{try{await api('leave',{m:'POST',b:{type:ty.value,from:f.value,to:t.value,reason:why.value}});toast('Leave requested');show(leave)}catch(e){toast(e.message)}}},'Request')))}
   const dec=(id,x)=>async()=>{try{await api('leave/'+id+'/decide',{m:'POST',b:{decision:x}});show(leave)}catch(e){toast(e.message)}};
-  w.append(table(fac?['Dates','Days','Type','Status']:['Staff','Dates','Days','Reason','Status',''],r.rows.map(x=>fac?[x.from_date+' to '+x.to_date,x.days,x.type,x.status]:[x.name,x.from_date+' to '+x.to_date,x.days,x.reason,x.status,x.status==='pending'?h('span',{},h('button',{class:'btn sm',onclick:dec(x.id,'approve')},'Approve'),' ',h('button',{class:'btn s sm',onclick:dec(x.id,'reject')},'Reject')):''])));return w}
+  w.append(table(fac?['Dates','Days','Type','Status']:['Staff','Dates','Days','Reason','Status',''],r.rows.map(x=>fac?[x.from_date+' to '+x.to_date,x.days,x.type,h('span',{class:'st '+x.status},x.status)]:[x.name,x.from_date+' to '+x.to_date,x.days,x.reason,h('span',{class:'st '+x.status},x.status),x.status==='pending'?h('span',{},h('button',{class:'btn sm',onclick:dec(x.id,'approve')},'Approve'),' ',h('button',{class:'btn s sm',onclick:dec(x.id,'reject')},'Reject')):''])));return w}
 async function audit(){const a=await api('audit');return h('div',{},h('h2',{},'Audit log'),table(['When','Action','Detail'],a.map(x=>[new Date(x.at).toLocaleString(),x.action,x.detail])))}
 function boot(){const nav=$('#nav');$('#out').hidden=!S;nav.hidden=!S;{const r=$('#role');r.hidden=!S;if(S)r.textContent=S.role==='admin'?'Office admin':'Faculty'}badge();
   if(!S){nav.replaceChildren();const e=h('input',{type:'email',placeholder:'Email',autocomplete:'username',autocapitalize:'off',autocorrect:'off',spellcheck:false}),p=h('input',{type:'password',placeholder:'Password',autocomplete:'current-password'}),err=h('p',{class:'bad'});
