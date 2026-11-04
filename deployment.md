@@ -5,16 +5,19 @@
 2. `git clone <your repo URL> && cd campus-erp-core`
 3. `npm install`
 4. `cp .env.example .env`, then set `SESSION_SECRET` to a long random string (for example `openssl rand -hex 32`). Export the variables, or run `export $(grep -v '^#' .env | xargs)`.
-5. `npm test` (19 tests should pass).
+5. `npm test` (20 tests should pass).
 6. `npm start`, then open http://localhost:3000. The database file is created and seeded on first start.
 
 ## How it is deployed
 One Node web service on Render (free tier), defined in `render.yaml`. Express serves the API and the static frontend from the same origin. Data is in SQLite.
 **Limit:** the free tier has an ephemeral disk, so the database resets to the seed data on restart. This is fine for review. A real rollout would use a persistent disk or PostgreSQL.
 
-To deploy: push to GitHub, choose **New + > Blueprint** on Render, and select the repo. Render generates `SESSION_SECRET` itself.
+Live app: https://campus-erp-core.onrender.com (repo: https://github.com/aakarshgopishetty/campus-erp-core)
+
+To deploy: create a Render **Web Service** from the public GitHub repo with branch `main`, build command `npm install`, start command `node src/server.js`, instance type Free, and the environment variables below (`NODE_VERSION=22`, `SESSION_SECRET`). `render.yaml` in the repo describes the same setup for a Blueprint deploy.
 
 ## Environment variables (names only)
+- `NODE_VERSION` (set to 22 on Render)
 - `SESSION_SECRET` (required; signs sign-in tokens)
 - `DEMO_PASSWORD` (optional; password for the seeded demo users)
 - `DB_PATH` (optional; defaults to `./erp.db`)
@@ -23,7 +26,7 @@ To deploy: push to GitHub, choose **New + > Blueprint** on Render, and select th
 - `ASSISTANT_MODEL` (optional; model name for that path)
 
 ## Demo logins for the reviewer
-Demo data only, no real personal data. Leave `DEMO_PASSWORD` unset to use the default below.
+Demo data only, no real personal data. Type the email and password below on the sign-in page. Leave `DEMO_PASSWORD` unset so the default applies.
 
 | Role | Email | Password |
 |---|---|---|
