@@ -9,6 +9,8 @@ export function createApp(db, secret, opts = {}) {
   const app = express();
   app.set('trust proxy', 1);
   const fails = new Map(); // login throttle: 5 failures per 15 min per ip+email
+  app.use((_q, res, next) => { res.set({ 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" }); next(); });
   app.use(express.json({ limit: '200kb' }));
   app.use(express.static(new URL('../public', import.meta.url).pathname));
   const sign = (p) => { const b = Buffer.from(JSON.stringify(p)).toString('base64url');
@@ -29,7 +31,18 @@ export function createApp(db, secret, opts = {}) {
 
   const canTeach = (u, sid) => u.role === 'admin' || !!db.prepare('SELECT 1 FROM teaching WHERE user_id=? AND subject_id=?').get(u.id, sid);
   const attPct = (roll) => { const r = db.prepare('SELECT SUM(present) p, COUNT(*) t FROM attendance WHERE roll=?').get(roll); return r.t ? pct(r.p || 0, r.t) : null; };
-  const marksOf = (roll) => Object.fromEntries(db.prepare('SELECT component,score,max FROM marks WHERE roll=?').all(roll).map((m) => [m.component, m]));
+  const marksBySubject = (roll) => { const out = {};
+    for (const m of db.prepare('SELECT sub.code, m.component, m.score, m.max FROM marks m JOIN subjects sub ON sub.id=m.subject_id WHERE m.roll=?').all(roll)) (out[m.code] ??= {})[m.component] = { score: m.score, max: m.max };
+    return out; };
+  // Attendance reason once, marks reasons per subject (prefixed with the subject code).
+  const riskReasons = (roll) => { const r = atRisk({ attPct: attPct(roll), marks: {} });
+    for (const [code, marks] of Object.entries(marksBySubject(roll))) r.push(...atRisk({ attPct: null, marks }).map((x) => code + ': ' + x));
+    return r; };
+  const lowestTotal = (roll) => { const t = Object.values(marksBySubject(roll)).map((ms) => Object.values(ms).reduce((a, m) => a + m.score, 0)); return t.length ? Math.min(...t) : null; };
+  const enrolInto = (sid) => { const q = db.prepare('SELECT programme,year,campus_id FROM subjects WHERE id=?').get(sid);
+    db.prepare('INSERT OR IGNORE INTO enrolments SELECT roll,? FROM students WHERE campus_id=? AND programme=? AND year=?').run(sid, q.campus_id, q.programme, q.year); };
+  const enrolStudent = (roll) => { const q = db.prepare('SELECT programme,year,campus_id FROM students WHERE roll=?').get(roll);
+    db.prepare('INSERT OR IGNORE INTO enrolments SELECT ?,id FROM subjects WHERE campus_id=? AND programme=? AND year=?').run(roll, q.campus_id, q.programme, q.year); };
 
   app.post('/api/login', (req, res) => {
     let { email, password } = req.body || {};
@@ -57,8 +70,15 @@ export function createApp(db, secret, opts = {}) {
       if (!fac) return res.status(400).json({ error: 'No faculty member with that email on this campus' }); }
     const id = Number(db.prepare('INSERT INTO subjects(campus_id,code,name,programme,year) VALUES(?,?,?,?,?)').run(req.user.campus, code.toUpperCase(), name.trim(), programme, year).lastInsertRowid);
     if (fac) db.prepare('INSERT INTO teaching VALUES(?,?)').run(fac.id, id);
+    enrolInto(id);
     audit(req.user.id, 'subject.create', { id, code: code.toUpperCase(), faculty: fac ? faculty_email : null });
     res.json({ id });
+  });
+
+  app.get('/api/subjects/:id/students', auth(), (req, res) => {
+    const sid = Number(req.params.id);
+    if (!db.prepare('SELECT 1 FROM subjects WHERE id=? AND campus_id=?').get(sid, req.user.campus) || !canTeach(req.user, sid)) return res.status(403).json({ error: 'Not your subject' });
+    res.json(db.prepare('SELECT s.roll,s.name FROM students s JOIN enrolments e ON e.roll=s.roll WHERE e.subject_id=? AND s.campus_id=? ORDER BY s.roll').all(sid, req.user.campus));
   });
 
   app.get('/api/students', auth(), (req, res) => {
@@ -76,8 +96,9 @@ export function createApp(db, secret, opts = {}) {
     for (const r of recs) {
       const err = validateRecord(r);
       const ok = !err && db.prepare('SELECT 1 FROM students WHERE roll=? AND campus_id=?').get(r.roll, req.user.campus)
-        && db.prepare('SELECT 1 FROM subjects WHERE id=? AND campus_id=?').get(r.subject_id, req.user.campus) && canTeach(req.user, r.subject_id);
-      if (err || !ok) { out.rejected.push({ client_id: r?.client_id, reason: err || 'unknown student, or subject not assigned to you' }); continue; }
+        && db.prepare('SELECT 1 FROM subjects WHERE id=? AND campus_id=?').get(r.subject_id, req.user.campus) && canTeach(req.user, r.subject_id)
+        && db.prepare('SELECT 1 FROM enrolments WHERE roll=? AND subject_id=?').get(r.roll, r.subject_id);
+      if (err || !ok) { out.rejected.push({ client_id: r?.client_id, reason: err || 'unknown student, subject not assigned to you, or student not enrolled' }); continue; }
       if (db.prepare('SELECT 1 FROM attendance WHERE client_id=?').get(r.client_id)) { out.duplicates.push(r.client_id); continue; }
       const slot = db.prepare('SELECT client_id,present FROM attendance WHERE roll=? AND subject_id=? AND date=? AND period=?').get(r.roll, r.subject_id, r.date, r.period);
       if (slot) { // same period marked again: a different value is a correction (last write wins, audited)
@@ -100,7 +121,7 @@ export function createApp(db, secret, opts = {}) {
     if (!db.prepare('SELECT 1 FROM subjects WHERE id=? AND campus_id=?').get(sid, req.user.campus) || !canTeach(req.user, sid)) return res.status(403).json({ error: 'Not your subject' });
     const have = new Map(db.prepare('SELECT roll,component,score FROM marks WHERE subject_id=?').all(sid).map((m) => [m.roll + '|' + m.component, m.score]));
     const rows = [];
-    for (const s of db.prepare('SELECT roll,name FROM students WHERE campus_id=? ORDER BY roll').all(req.user.campus))
+    for (const s of db.prepare('SELECT s.roll,s.name FROM students s JOIN enrolments e ON e.roll=s.roll WHERE e.subject_id=? AND s.campus_id=? ORDER BY s.roll').all(sid, req.user.campus))
       for (const [component, max] of Object.entries(COMPONENTS)) rows.push({ roll: s.roll, name: s.name, component, score: have.get(s.roll + '|' + component) ?? null, max });
     res.json({ locked: !!db.prepare('SELECT 1 FROM mark_locks WHERE subject_id=?').get(sid), rows });
   });
@@ -110,7 +131,7 @@ export function createApp(db, secret, opts = {}) {
     const sid = Number(req.params.subject);
     if (!db.prepare('SELECT 1 FROM mark_locks WHERE subject_id=?').get(sid)) return res.status(409).json({ error: 'Lock marks after moderation before exporting' });
     const cell = (v) => { let t = String(v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g, '""') + '"'; }; // blocks CSV formula injection
-    const rows = db.prepare('SELECT s.roll,s.name,s.programme,s.year FROM students s WHERE s.campus_id=? ORDER BY s.roll').all(req.user.campus);
+    const rows = db.prepare('SELECT s.roll,s.name,s.programme,s.year FROM students s JOIN enrolments e ON e.roll=s.roll WHERE e.subject_id=? AND s.campus_id=? ORDER BY s.roll').all(sid, req.user.campus);
     const get = db.prepare('SELECT component,score FROM marks WHERE roll=? AND subject_id=?');
     const lines = [['Roll No', 'Name', 'Programme', 'Year', 'Mid1', 'Mid2', 'Assignment', 'Internal Total (40)']];
     for (const r of rows) { const m = Object.fromEntries(get.all(r.roll, sid).map((x) => [x.component, x.score]));
@@ -128,7 +149,7 @@ export function createApp(db, secret, opts = {}) {
     if (db.prepare('SELECT 1 FROM mark_locks WHERE subject_id=?').get(subject_id))
       return res.status(409).json({ error: 'Marks are locked after moderation' });
     const old = db.prepare('SELECT score FROM marks WHERE roll=? AND subject_id=? AND component=?').get(roll, subject_id, component);
-    if (!db.prepare('SELECT 1 FROM students WHERE roll=? AND campus_id=?').get(roll, req.user.campus)) return res.status(404).json({ error: 'Student not found' });
+    if (!db.prepare('SELECT 1 FROM enrolments e JOIN students s ON s.roll=e.roll WHERE e.roll=? AND e.subject_id=? AND s.campus_id=?').get(roll, subject_id, req.user.campus)) return res.status(404).json({ error: 'Student is not enrolled in this subject' });
     db.prepare('INSERT INTO marks VALUES(?,?,?,?,?) ON CONFLICT(roll,subject_id,component) DO UPDATE SET score=excluded.score').run(roll, subject_id, component, score, max);
     audit(req.user.id, 'marks.set', { roll, subject_id, component, from: old?.score ?? null, to: score });
     res.json({ ok: true });
@@ -196,6 +217,7 @@ export function createApp(db, secret, opts = {}) {
       const n = db.prepare('SELECT COUNT(*) c FROM students WHERE roll LIKE ?').get(stem + '%').c + 1;
       const roll = stem + String(n).padStart(4, '0');
       db.prepare('INSERT INTO students(roll,campus_id,name,programme,year,guardian_consent,dob) VALUES(?,?,?,?,?,?,?)').run(roll, req.user.campus, r.name, r.programme, year, consent ? 1 : 0, r.dob);
+      enrolStudent(roll);
       out.created.push({ line, name: r.name, roll });
     });
     db.exec('COMMIT');
@@ -248,14 +270,14 @@ export function createApp(db, secret, opts = {}) {
   // At-risk flags only ever create a mentor task. They never change a record.
   app.get('/api/at-risk', auth(), (req, res) => {
     const out = db.prepare('SELECT roll,name FROM students WHERE campus_id=?').all(req.user.campus)
-      .map((s) => ({ ...s, attendance: attPct(s.roll), reasons: atRisk({ attPct: attPct(s.roll), marks: marksOf(s.roll) }) }))
+      .map((s) => ({ ...s, attendance: attPct(s.roll), reasons: riskReasons(s.roll) }))
       .filter((s) => s.reasons.length);
     res.json(out);
   });
   app.post('/api/at-risk/run', auth('admin'), (req, res) => {
     let created = 0;
     for (const s of db.prepare('SELECT roll FROM students WHERE campus_id=?').all(req.user.campus)) {
-      const reasons = atRisk({ attPct: attPct(s.roll), marks: marksOf(s.roll) });
+      const reasons = riskReasons(s.roll);
       if (reasons.length && db.prepare('INSERT OR IGNORE INTO mentor_tasks(roll,reasons,created_at) VALUES(?,?,?)').run(s.roll, JSON.stringify(reasons), new Date().toISOString()).changes) created++;
     }
     res.json({ created });
@@ -270,7 +292,7 @@ export function createApp(db, secret, opts = {}) {
     if (!filters?.length) { filters = validate(ruleParse(q, progs), progs); source = 'rules'; }
     if (!filters?.length) return res.status(422).json({ error: 'I could not turn that into filters. Try: "second-year students below 75%" or "students with fee dues"' });
     const rows = db.prepare('SELECT roll,name,programme,year,fee_due FROM students WHERE campus_id=?').all(req.user.campus)
-      .map((s) => ({ ...s, attendance: attPct(s.roll), marks_total: Object.values(marksOf(s.roll)).reduce((a, m) => a + m.score, 0) }))
+      .map((s) => ({ ...s, attendance: attPct(s.roll), marks_total: lowestTotal(s.roll) }))
       .filter((s) => filters.every((f) => s[f.field] != null && ({ '<': s[f.field] < f.value, '<=': s[f.field] <= f.value, '>': s[f.field] > f.value, '>=': s[f.field] >= f.value, '=': s[f.field] === f.value })[f.op]));
     audit(req.user.id, 'ask', { q: q.slice(0, 100), filters, count: rows.length, source });
     res.json({ source, filters, count: rows.length, rows: rows.slice(0, 50) });
