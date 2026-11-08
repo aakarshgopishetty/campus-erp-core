@@ -15,6 +15,7 @@ export function createDb(path = ':memory:', demoPassword = 'demo-pass-1') {
   CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, email TEXT UNIQUE, name TEXT, role TEXT CHECK(role IN('faculty','admin')), campus_id INTEGER, pw TEXT);
   CREATE TABLE IF NOT EXISTS subjects(id INTEGER PRIMARY KEY, campus_id INTEGER, code TEXT, name TEXT, programme TEXT, year INTEGER);
   CREATE TABLE IF NOT EXISTS teaching(user_id INTEGER, subject_id INTEGER, PRIMARY KEY(user_id, subject_id));
+  CREATE TABLE IF NOT EXISTS enrolments(roll TEXT, subject_id INTEGER, PRIMARY KEY(roll, subject_id));
   CREATE TABLE IF NOT EXISTS students(roll TEXT PRIMARY KEY, campus_id INTEGER, name TEXT, programme TEXT, year INTEGER, fee_due INTEGER DEFAULT 0, guardian_consent INTEGER DEFAULT 0, dob TEXT);
   CREATE TABLE IF NOT EXISTS attendance(client_id TEXT PRIMARY KEY, roll TEXT, subject_id INTEGER, date TEXT, period INTEGER, present INTEGER, marked_by INTEGER,
     UNIQUE(roll, subject_id, date, period));
@@ -53,5 +54,6 @@ function seed(db, pw) {
       run('INSERT INTO attendance VALUES(?,?,?,?,?,?,?)', `seed-${roll}-${i}`, roll, 1, d, (i % 10) + 1, i < perMille ? 1 : 0, 1);
     }
   }
+  for (const [roll] of S) run('INSERT INTO enrolments VALUES(?,1)', roll); // ASSUMPTION: sample students all take CS301
   db.exec('COMMIT');
 }
