@@ -5,7 +5,7 @@
 2. `git clone <your repo URL> && cd campus-erp-core`
 3. `npm install`
 4. `cp .env.example .env`, then set `SESSION_SECRET` to a long random string (for example `openssl rand -hex 32`). Export the variables, or run `export $(grep -v '^#' .env | xargs)`.
-5. `npm test` (23 tests should pass).
+5. `npm test` (25 tests should pass).
 6. `npm start`, then open http://localhost:3000. The database file is created and seeded on first start.
 
 ## How it is deployed
