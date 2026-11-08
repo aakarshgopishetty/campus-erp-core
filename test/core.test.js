@@ -177,10 +177,28 @@ test('faculty cannot mark attendance or marks for a subject not assigned to them
   assert.equal((await call('GET', '/api/marks/' + id, 'faculty')).status, 403);
   assert.equal((await call('GET', '/api/marks/' + id, 'admin')).status, 200);
 });
-test('marks grid for a new subject lists every student and component with empty scores', async () => {
+test('marks grid and roster follow enrolment (programme and year), not every student', async () => {
   const subs = await (await call('GET', '/api/subjects', 'faculty')).json();
   const s = subs.find((x) => x.code === 'CS302');
   const g = await (await call('GET', '/api/marks/' + s.id, 'faculty')).json();
-  assert.ok(g.rows.length >= 9 && g.rows.every((r) => r.score === null) && g.locked === false);
-  assert.equal((await call('PUT', '/api/marks', 'faculty', { roll: 'MBA-25-0093', subject_id: s.id, component: 'mid1', score: 12 })).status, 200);
+  assert.equal(g.rows.length, 3); assert.ok(g.rows.every((r) => r.score === null && r.roll === 'ENG-24-CSE-0412') && g.locked === false);
+  assert.equal((await call('PUT', '/api/marks', 'faculty', { roll: 'ENG-24-CSE-0412', subject_id: s.id, component: 'mid1', score: 12 })).status, 200);
+  assert.equal((await call('PUT', '/api/marks', 'faculty', { roll: 'MBA-25-0093', subject_id: s.id, component: 'mid1', score: 12 })).status, 404);
+  const roster = await (await call('GET', `/api/subjects/${s.id}/students`, 'faculty')).json();
+  assert.deepEqual(roster.map((r) => r.roll), ['ENG-24-CSE-0412']);
+  const rej = await (await call('POST', '/api/attendance/sync', 'faculty', { records: [{ client_id: 'enrl-aaaa-0001', roll: 'MBA-25-0093', subject_id: s.id, date: '2026-11-06', period: 3, present: true }] })).json();
+  assert.equal(rej.rejected.length, 1);
+});
+test('new subjects and new applicants are enrolled automatically', async () => {
+  const id = (await (await call('POST', '/api/subjects', 'admin', { code: 'CS101', name: 'Programming Basics', programme: 'B.Tech CSE', year: 1, faculty_email: 'faculty@demo.test' })).json()).id;
+  const r = await (await call('POST', '/api/admissions/import', 'admin', { csv: CSV(['Zoya Khan,2000-01-01,B.Tech CSE,1,no']) })).json();
+  assert.equal(r.created.length, 1);
+  const roster = await (await call('GET', `/api/subjects/${id}/students`, 'faculty')).json();
+  assert.ok(roster.some((x) => x.name === 'Asha Rao') && roster.some((x) => x.name === 'Zoya Khan'));
+});
+test('at-risk marks reasons are per subject; security headers are set', async () => {
+  const r = await fetch(base + '/');
+  assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.match(r.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  const risk = await (await call('GET', '/api/at-risk', 'admin')).json();
+  assert.ok(risk.every((s) => s.reasons.every((x) => !x.includes(':') || /^[A-Z0-9]+: /.test(x))));
 });
